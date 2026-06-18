@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Lifeline Relay — Dashboard</title>
+<style>
+  body { font-family: -apple-system, Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; background: #fafafa; color: #1a1a1a; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: #666; margin-bottom: 20px; font-size: 14px; }
+  .nav { margin-bottom: 20px; }
+  .nav a { color: #1a1a1a; text-decoration: none; font-size: 13px; margin-right: 16px; }
+  .zones { display: flex; gap: 14px; margin-bottom: 24px; flex-wrap: wrap; }
+  .zone-card { flex: 1; min-width: 150px; background: white; border-radius: 10px; padding: 16px; border: 2px solid #eee; }
+  .zone-card.low { border-color: #4caf50; }
+  .zone-card.medium { border-color: #ff9800; }
+  .zone-card.high { border-color: #f44336; }
+  .zone-card.critical { border-color: #b71c1c; background: #fff5f5; }
+  .zone-id { font-weight: 600; font-size: 15px; text-transform: uppercase; }
+  .risk-badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; margin-top: 6px; }
+  .risk-badge.low { background: #e8f5e9; color: #1b5e20; }
+  .risk-badge.medium { background: #fff3e0; color: #e65100; }
+  .risk-badge.high { background: #ffebee; color: #b71c1c; }
+  .risk-badge.critical { background: #b71c1c; color: white; }
+  .stat-row { font-size: 12px; color: #555; margin-top: 8px; }
+  .section { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 18px; margin-bottom: 20px; }
+  .section h2 { font-size: 15px; margin-top: 0; }
+  .timeline-entry { padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+  .timeline-entry:last-child { border-bottom: none; }
+  .timeline-agent { font-weight: 600; color: #1a1a1a; }
+  .timeline-headline { margin-top: 2px; }
+  .timeline-detail { color: #666; font-size: 12px; margin-top: 2px; }
+  .timeline-time { color: #999; font-size: 11px; float: right; }
+  .empty { color: #999; font-size: 13px; padding: 10px 0; }
+</style>
+</head>
+<body>
+
+<div class="nav"><a href="/simulator">→ Go to Simulator</a></div>
+<h1>Lifeline Relay — Live Dashboard</h1>
+<div class="sub">Auto-refreshes every 3 seconds</div>
+
+<div id="zones" class="zones"></div>
+
+<div class="section">
+  <h2>Decision Timeline</h2>
+  <div id="timeline"></div>
+</div>
+
+<script>
+function riskClass(level) {
+  return level || 'low';
+}
+
+async function refresh() {
+  try {
+    const [zonesRes, timelineRes] = await Promise.all([
+      fetch('/zones'), fetch('/timeline')
+    ]);
+    const zones = await zonesRes.json();
+    const timeline = await timelineRes.json();
+
+    const zonesEl = document.getElementById('zones');
+    if (zones.length === 0) {
+      zonesEl.innerHTML = '<div class="empty">No zones yet — send a weather signal from the Simulator.</div>';
+    } else {
+      zonesEl.innerHTML = zones.map(z => `
+        <div class="zone-card ${riskClass(z.current_risk_level)}">
+          <div class="zone-id">${z.zone_id}</div>
+          <span class="risk-badge ${riskClass(z.current_risk_level)}">${z.current_risk_level.toUpperCase()}</span>
+          <div class="stat-row">SOS: ${z.sos_count} (${z.critical_sos_count} critical)</div>
+          <div class="stat-row">Vulnerable flags: ${z.vulnerability_flags_count}</div>
+          ${z.active_conflict ? '<div class="stat-row" style="color:#b71c1c;font-weight:600;">⚠ Active conflict</div>' : ''}
+        </div>
+      `).join('');
+    }
+
+    const timelineEl = document.getElementById('timeline');
+    if (timeline.length === 0) {
+      timelineEl.innerHTML = '<div class="empty">No activity yet.</div>';
+    } else {
+      timelineEl.innerHTML = timeline.map(t => `
+        <div class="timeline-entry">
+          <span class="timeline-time">${new Date(t.timestamp).toLocaleTimeString()}</span>
+          <span class="timeline-agent">${t.agent}</span>
+          <div class="timeline-headline">${t.headline}</div>
+          <div class="timeline-detail">${t.detail}</div>
+        </div>
+      `).join('');
+    }
+  } catch (e) {
+    console.error('Refresh failed', e);
+  }
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+
+</body>
+</html>
