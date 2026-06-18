@@ -1,0 +1,75 @@
+"""
+Disaster Memory — the shared state store that connects all 3 phases.
+
+This is intentionally a simple in-memory store for the hackathon build.
+WatcherAgent writes zone risk here. ResponderAgent reads it (to boost
+SOS urgency) and writes SOS counts back. CoordinatorAgent reads both
+to detect conflicts. RecoveryAgent reads zone history to weight damage
+reports. The Decision Timeline reads everything to render the live feed.
+
+For production this would be Redis or a real DB — for the hackathon,
+a process-lifetime dict is the right scope: simple, fast, zero infra
+dependency, and perfectly demoable.
+"""
+
+from typing import Dict, List, Optional
+from app.models.schemas import ZoneMemory, TimelineEntry, RiskLevel, ConflictEvent
+
+
+class DisasterMemory:
+    def __init__(self):
+        self.zones: Dict[str, ZoneMemory] = {}
+        self.timeline: List[TimelineEntry] = []
+        self.conflicts: Dict[str, ConflictEvent] = {}
+        self._entry_counter = 0
+
+    # --- Zone memory ---
+
+    def get_zone(self, zone_id: str) -> ZoneMemory:
+        """Get a zone's memory, creating it with defaults if it doesn't exist yet."""
+        if zone_id not in self.zones:
+            self.zones[zone_id] = ZoneMemory(zone_id=zone_id)
+        return self.zones[zone_id]
+
+    def update_zone_risk(self, zone_id: str, risk_level: RiskLevel):
+        zone = self.get_zone(zone_id)
+        zone.current_risk_level = risk_level
+
+    def record_sos(self, zone_id: str, is_critical: bool, is_vulnerable: bool):
+        zone = self.get_zone(zone_id)
+        zone.sos_count += 1
+        if is_critical:
+            zone.critical_sos_count += 1
+        if is_vulnerable:
+            zone.vulnerability_flags_count += 1
+
+    def set_active_conflict(self, zone_id: str, conflict_id: Optional[str]):
+        zone = self.get_zone(zone_id)
+        zone.active_conflict = conflict_id
+
+    # --- Conflicts ---
+
+    def add_conflict(self, conflict: ConflictEvent):
+        self.conflicts[conflict.conflict_id] = conflict
+        self.set_active_conflict(conflict.zone_id, conflict.conflict_id)
+
+    # --- Decision Timeline ---
+
+    def log(self, entry: TimelineEntry):
+        self._entry_counter += 1
+        self.timeline.append(entry)
+
+    def get_timeline(self, limit: int = 50) -> List[TimelineEntry]:
+        """Most recent entries first — what the dashboard renders."""
+        return sorted(self.timeline, key=lambda e: e.timestamp, reverse=True)[:limit]
+
+    # --- Dashboard summary ---
+
+    def get_all_zones(self) -> List[ZoneMemory]:
+        return list(self.zones.values())
+
+
+# Single shared instance for the whole app's lifetime — every agent
+# imports and uses this same object, which is what makes the phases
+# "remember" each other instead of operating in isolation.
+disaster_memory = DisasterMemory()
