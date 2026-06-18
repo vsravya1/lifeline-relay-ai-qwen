@@ -2,6 +2,9 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from datetime import datetime
 import os
+from dotenv import load_dotenv
+
+load_dotenv()  # reads .env file in the same directory, if present
 
 from app.models.schemas import WeatherSignal, SOSMessage
 from app.agents.watcher_agent import assess_zone_risk
