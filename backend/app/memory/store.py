@@ -22,6 +22,20 @@ class DisasterMemory:
         self.timeline: List[TimelineEntry] = []
         self.conflicts: Dict[str, ConflictEvent] = {}
         self._entry_counter = 0
+        # Tracks each agent's current display status for the dashboard's
+        # agent panel — "idle", "processing", or "conflict_found".
+        self.agent_status: Dict[str, str] = {
+            "WatcherAgent": "idle",
+            "ResponderAgent": "idle",
+            "CoordinatorAgent": "idle",
+            "RecoveryAgent": "idle",
+        }
+
+    def set_agent_status(self, agent_name: str, status: str):
+        self.agent_status[agent_name] = status
+
+    def get_agent_status(self) -> Dict[str, str]:
+        return self.agent_status
 
     # --- Zone memory ---
 
