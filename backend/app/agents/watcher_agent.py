@@ -20,6 +20,8 @@ Respond ONLY with JSON in this exact shape, no other text:
 
 
 async def assess_zone_risk(signal: WeatherSignal) -> ZoneRiskAssessment:
+    disaster_memory.set_agent_status("WatcherAgent", "processing")
+
     user_prompt = (
         f"Weather signal for zone {signal.zone_id}: event_type={signal.event_type}, "
         f"severity_raw={signal.severity_raw}, wind_speed_mph={signal.wind_speed_mph}, "
@@ -51,5 +53,7 @@ async def assess_zone_risk(signal: WeatherSignal) -> ZoneRiskAssessment:
         headline=f"Zone {signal.zone_id} risk assessed: {risk_level.value.upper()}",
         detail=reasoning,
     ))
+
+    disaster_memory.set_agent_status("WatcherAgent", "idle")
 
     return assessment

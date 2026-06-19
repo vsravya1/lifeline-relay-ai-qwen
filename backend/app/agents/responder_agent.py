@@ -40,6 +40,8 @@ def _bump_urgency(current: UrgencyLevel, steps: int = 1) -> UrgencyLevel:
 
 
 async def triage_sos(sos: SOSMessage) -> SOSAssessment:
+    disaster_memory.set_agent_status("ResponderAgent", "processing")
+
     user_prompt = f"SOS message from zone {sos.zone_id}: \"{sos.message}\""
 
     result = await qwen_client.ask(SYSTEM_PROMPT, user_prompt)
@@ -51,14 +53,25 @@ async def triage_sos(sos: SOSMessage) -> SOSAssessment:
 
     # --- Mechanic 1: vulnerability priority ---
     final_urgency = base_urgency
+    bump_reasons = []
     if vulnerability_flag:
         final_urgency = _bump_urgency(final_urgency, steps=1)
+        bump_reasons.append("escalated due to vulnerability priority")
 
     # --- Mechanic 2: zone risk boost, read from Disaster Memory ---
     zone_memory = disaster_memory.get_zone(sos.zone_id)
     zone_risk_boost_applied = zone_memory.current_risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL)
     if zone_risk_boost_applied:
         final_urgency = _bump_urgency(final_urgency, steps=1)
+        bump_reasons.append(f"escalated further because zone {sos.zone_id} was already flagged {zone_memory.current_risk_level.value} risk")
+
+    # Build a reasoning string that always reflects the FINAL decision,
+    # not the pre-bump base classification — explainability has to match
+    # the actual outcome shown to the user.
+    if bump_reasons:
+        full_reasoning = f"{reasoning} Urgency {', '.join(bump_reasons)}, resulting in final urgency: {final_urgency.value.upper()}."
+    else:
+        full_reasoning = reasoning
 
     assessment = SOSAssessment(
         sos_id=str(uuid.uuid4()),
@@ -69,7 +82,7 @@ async def triage_sos(sos: SOSMessage) -> SOSAssessment:
         vulnerability_flag=vulnerability_flag,
         vulnerability_reason=vulnerability_reason,
         zone_risk_boost_applied=zone_risk_boost_applied,
-        reasoning=reasoning,
+        reasoning=full_reasoning,
     )
 
     # Write back into shared memory — CoordinatorAgent and RecoveryAgent
@@ -91,7 +104,9 @@ async def triage_sos(sos: SOSMessage) -> SOSAssessment:
         agent=AgentName.RESPONDER,
         zone_id=sos.zone_id,
         headline=headline,
-        detail=reasoning,
+        detail=full_reasoning,
     ))
+
+    disaster_memory.set_agent_status("ResponderAgent", "idle")
 
     return assessment
