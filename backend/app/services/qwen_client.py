@@ -90,6 +90,17 @@ class QwenClient:
                 "confidence": 0.85
             }
 
+        # --- CoordinatorAgent: conflict arbitration ---
+        # Checked BEFORE the SOS pattern below, since conflict prompts
+        # also reference SOS counts and would otherwise be misrouted
+        # to the ResponderAgent mock logic.
+        if "conflict detected" in prompt_lower or "which source should be trusted" in prompt_lower:
+            return {
+                "winning_source": "citizen_report",
+                "resolution": "Citizen ground reports override sensor data given the volume and consistency of reports.",
+                "reasoning": "Multiple independent citizen reports carry higher real-time reliability than periodic sensor readings, especially when sensor data has not refreshed recently."
+            }
+
         # --- ResponderAgent: SOS triage ---
         if "sos message" in prompt_lower or "citizen message" in prompt_lower:
             vulnerable_terms = ["child", "kid", "elderly", "wheelchair", "baby", "disabled", "infant"]
@@ -105,21 +116,24 @@ class QwenClient:
                 "reasoning": f"Classified as {urgency} based on message content and vulnerability indicators."
             }
 
-        # --- CoordinatorAgent: conflict arbitration ---
-        if "conflict" in prompt_lower or "disagreement" in prompt_lower:
-            return {
-                "resolution": "Citizen ground reports override stale sensor data given volume and consistency of reports.",
-                "winning_source": "citizen_report",
-                "reasoning": "Multiple independent citizen reports carry higher real-time reliability than periodic sensor readings, especially when sensor data has not refreshed recently.",
-                "requires_human_approval": True
-            }
-
         # --- RecoveryAgent: damage assessment ---
         if "damage" in prompt_lower or "photo" in prompt_lower:
+            if "minor" in prompt_lower or "pooling" in prompt_lower or "no structural damage" in prompt_lower:
+                return {
+                    "severity_score": 2.5,
+                    "image_description": "Minor surface water with no visible structural damage.",
+                    "reasoning": "Severity scored low — water pooling only, no signs of structural impact."
+                }
+            if "severe" in prompt_lower or "first-floor windows" in prompt_lower or "structural damage" in prompt_lower:
+                return {
+                    "severity_score": 8.8,
+                    "image_description": "Severe flooding with water reaching first-floor windows and visible structural damage.",
+                    "reasoning": "Severity scored high due to water depth and clear structural impact to the building."
+                }
             return {
-                "severity_score": 7.5,
-                "image_description": "Significant flooding visible with partially submerged structures and debris.",
-                "reasoning": "Severity scored high due to visible structural impact and water depth indicators."
+                "severity_score": 5.5,
+                "image_description": "Moderate flooding with partially submerged vehicles and street debris.",
+                "reasoning": "Severity scored medium — visible flooding and debris, but no structural collapse evident."
             }
 
         # Fallback for anything unmatched
