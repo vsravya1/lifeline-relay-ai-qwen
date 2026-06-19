@@ -1,66 +1,159 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Lifeline Relay — Dashboard</title>
+<title>Lifeline Relay — Live Dashboard</title>
 <style>
-  body { font-family: -apple-system, Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; background: #fafafa; color: #1a1a1a; }
-  h1 { font-size: 22px; margin-bottom: 4px; }
-  .sub { color: #666; margin-bottom: 20px; font-size: 14px; }
-  .nav { margin-bottom: 20px; }
-  .nav a { color: #1a1a1a; text-decoration: none; font-size: 13px; margin-right: 16px; }
-  .zones { display: flex; gap: 14px; margin-bottom: 24px; flex-wrap: wrap; }
-  .zone-card { flex: 1; min-width: 150px; background: white; border-radius: 10px; padding: 16px; border: 2px solid #eee; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Arial, sans-serif; margin: 0; padding: 24px; background: #fafafa; color: #1a1a1a; }
+  .top-header { text-align: center; margin-bottom: 20px; }
+  .top-header h1 { font-size: 22px; margin: 0; }
+  .top-header .sub { color: #666; font-size: 13px; margin-top: 4px; }
+
+  .layout { display: grid; grid-template-columns: 220px 1fr; gap: 18px; max-width: 1100px; margin: 0 auto; }
+
+  .agents-panel { display: flex; flex-direction: column; gap: 10px; }
+  .agent-card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 12px; }
+  .agent-card .name { font-weight: 600; font-size: 13px; }
+  .agent-card .role { font-size: 11px; color: #888; margin: 2px 0 8px; }
+  .agent-status { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .agent-status.idle { background: #f0f0f0; color: #777; }
+  .agent-status.processing { background: #fff3e0; color: #e65100; }
+  .agent-status.conflict_found { background: #ffebee; color: #b71c1c; }
+
+  .main-col { display: flex; flex-direction: column; gap: 16px; }
+
+  .zones { display: flex; gap: 12px; }
+  .zone-card { flex: 1; background: white; border-radius: 10px; padding: 14px; border: 2px solid #eee; }
   .zone-card.low { border-color: #4caf50; }
   .zone-card.medium { border-color: #ff9800; }
   .zone-card.high { border-color: #f44336; }
   .zone-card.critical { border-color: #b71c1c; background: #fff5f5; }
-  .zone-id { font-weight: 600; font-size: 15px; text-transform: uppercase; }
+  .zone-id { font-weight: 600; font-size: 14px; text-transform: uppercase; }
   .risk-badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; margin-top: 6px; }
   .risk-badge.low { background: #e8f5e9; color: #1b5e20; }
   .risk-badge.medium { background: #fff3e0; color: #e65100; }
   .risk-badge.high { background: #ffebee; color: #b71c1c; }
   .risk-badge.critical { background: #b71c1c; color: white; }
-  .stat-row { font-size: 12px; color: #555; margin-top: 8px; }
-  .section { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 18px; margin-bottom: 20px; }
-  .section h2 { font-size: 15px; margin-top: 0; }
-  .timeline-entry { padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
-  .timeline-entry:last-child { border-bottom: none; }
-  .timeline-agent { font-weight: 600; color: #1a1a1a; }
-  .timeline-headline { margin-top: 2px; }
-  .timeline-detail { color: #666; font-size: 12px; margin-top: 2px; }
-  .timeline-time { color: #999; font-size: 11px; float: right; }
-  .empty { color: #999; font-size: 13px; padding: 10px 0; }
+  .stat-row { font-size: 11px; color: #555; margin-top: 6px; }
+
+  .conflict-card { background: #fff8e1; border: 2px solid #f9a825; border-radius: 10px; padding: 16px; }
+  .conflict-card h2 { margin: 0 0 8px; font-size: 14px; color: #e65100; }
+  .hitl-badge { display: inline-block; background: #e65100; color: white; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; padding: 3px 8px; border-radius: 4px; margin-bottom: 8px; }
+  .conflict-claim { font-size: 12px; margin: 5px 0; padding: 6px 8px; background: white; border-radius: 6px; }
+  .conflict-claim .label { font-weight: 600; }
+  .conflict-resolution { margin-top: 10px; padding: 8px; background: #fff; border-radius: 6px; font-size: 12px; }
+  .conflict-resolution .winner { color: #1b5e20; font-weight: 600; }
+  .conflict-buttons { margin-top: 10px; }
+  .conflict-buttons button { margin-right: 8px; padding: 7px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 12px; }
+  .btn-approve { background: #2e7d32; color: white; }
+  .btn-reject { background: #c62828; color: white; }
+
+  .chat-log { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 14px; max-height: 320px; overflow-y: auto; }
+  .chat-log h2 { margin: 0 0 10px; font-size: 14px; }
+  .chat-entry { display: flex; gap: 8px; padding: 7px 0; border-top: 1px solid #f3f3f3; font-size: 12.5px; }
+  .chat-entry:first-child { border-top: none; }
+  .agent-tag { font-weight: 600; padding: 1px 7px; border-radius: 4px; font-size: 11px; white-space: nowrap; height: fit-content; }
+  .agent-tag.WatcherAgent { background: #e3f2fd; color: #0d47a1; }
+  .agent-tag.ResponderAgent { background: #f3e5f5; color: #6a1b9a; }
+  .agent-tag.CoordinatorAgent { background: #ffebee; color: #b71c1c; }
+  .agent-tag.RecoveryAgent { background: #e8f5e9; color: #1b5e20; }
+  .chat-text .headline { color: #1a1a1a; }
+  .chat-text .detail { color: #777; font-size: 11.5px; margin-top: 1px; }
+  .chat-time { color: #aaa; font-size: 10.5px; margin-left: auto; white-space: nowrap; }
+  .empty { color: #999; font-size: 13px; padding: 6px 0; }
+
+  .demo-controls { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 14px; }
+  .demo-controls h2 { margin: 0 0 10px; font-size: 13px; color: #555; }
+  .demo-row { display: flex; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  .demo-row .group-label { font-size: 11px; color: #999; width: 100%; }
+  .demo-btn { padding: 9px 14px; border-radius: 6px; border: 1px solid #ccc; background: #fafafa; cursor: pointer; font-size: 12.5px; }
+  .demo-btn:hover { background: #f0f0f0; }
+  .demo-btn:disabled { opacity: 0.5; cursor: wait; }
+
+  .nav { text-align: center; margin-top: 14px; }
+  .nav a { color: #999; text-decoration: none; font-size: 12px; }
 </style>
 </head>
 <body>
 
-<div class="nav"><a href="/simulator">→ Go to Simulator</a></div>
-<h1>Lifeline Relay — Live Dashboard</h1>
-<div class="sub">Auto-refreshes every 3 seconds</div>
-
-<div id="zones" class="zones"></div>
-
-<div class="section">
-  <h2>Decision Timeline</h2>
-  <div id="timeline"></div>
+<div class="top-header">
+  <h1>Qwen Hackathon — Lifeline Relay AI</h1>
+  <div class="sub">Multi-agent disaster intelligence — before, during, and after</div>
 </div>
 
+<div class="layout">
+
+  <div class="agents-panel" id="agents-panel"></div>
+
+  <div class="main-col">
+    <div class="zones" id="zones"></div>
+    <div id="conflicts-section"></div>
+    <div class="chat-log">
+      <h2>Agent activity log</h2>
+      <div id="timeline"></div>
+    </div>
+
+    <div class="demo-controls">
+      <h2>Demo sequence</h2>
+      <div class="demo-row">
+        <span class="group-label">Phase 1 — Weather</span>
+        <button class="demo-btn" onclick="runStep('/demo/phase1/step1', this)">9:00 AM — Initial signals</button>
+        <button class="demo-btn" onclick="runStep('/demo/phase1/step2', this)">10:15 AM — Zone B worsens</button>
+      </div>
+      <div class="demo-row">
+        <span class="group-label">Phase 2 — SOS</span>
+        <button class="demo-btn" onclick="runStep('/demo/phase2/step1', this)">10:20 AM — First SOS wave</button>
+        <button class="demo-btn" onclick="runStep('/demo/phase2/step2', this)">10:45 AM — Contradicting reports</button>
+      </div>
+      <div class="demo-row">
+        <span class="group-label">Phase 3 — Recovery</span>
+        <button class="demo-btn" onclick="runStep('/demo/phase3/step1', this)">11:30 AM — Damage reports</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="nav"><a href="/simulator">Simulator (manual test data) →</a></div>
+
 <script>
-function riskClass(level) {
-  return level || 'low';
+const AGENT_INFO = {
+  WatcherAgent: { role: 'Phase 1 — weather risk' },
+  ResponderAgent: { role: 'Phase 2 — SOS triage' },
+  CoordinatorAgent: { role: 'Conflict arbitration' },
+  RecoveryAgent: { role: 'Phase 3 — damage' },
+};
+
+function riskClass(level) { return level || 'low'; }
+
+function statusLabel(status) {
+  if (status === 'conflict_found') return 'Conflict found';
+  if (status === 'processing') return 'Processing';
+  return 'Idle';
 }
 
 async function refresh() {
   try {
-    const [zonesRes, timelineRes] = await Promise.all([
-      fetch('/zones'), fetch('/timeline')
+    const [zonesRes, timelineRes, conflictsRes, statusRes] = await Promise.all([
+      fetch('/zones'), fetch('/timeline'), fetch('/conflicts'), fetch('/agent-status')
     ]);
     const zones = await zonesRes.json();
     const timeline = await timelineRes.json();
+    const conflicts = await conflictsRes.json();
+    const agentStatus = await statusRes.json();
+
+    const agentsEl = document.getElementById('agents-panel');
+    agentsEl.innerHTML = Object.entries(AGENT_INFO).map(([name, info]) => `
+      <div class="agent-card">
+        <div class="name">${name}</div>
+        <div class="role">${info.role}</div>
+        <span class="agent-status ${agentStatus[name] || 'idle'}">${statusLabel(agentStatus[name])}</span>
+      </div>
+    `).join('');
 
     const zonesEl = document.getElementById('zones');
     if (zones.length === 0) {
-      zonesEl.innerHTML = '<div class="empty">No zones yet — send a weather signal from the Simulator.</div>';
+      zonesEl.innerHTML = '<div class="empty">No zones yet — run a demo step below.</div>';
     } else {
       zonesEl.innerHTML = zones.map(z => `
         <div class="zone-card ${riskClass(z.current_risk_level)}">
@@ -73,26 +166,70 @@ async function refresh() {
       `).join('');
     }
 
-    const timelineEl = document.getElementById('timeline');
-    if (timeline.length === 0) {
-      timelineEl.innerHTML = '<div class="empty">No activity yet.</div>';
+    const conflictsEl = document.getElementById('conflicts-section');
+    const pendingConflicts = conflicts.filter(c => c.human_approved === null);
+    if (pendingConflicts.length === 0) {
+      conflictsEl.innerHTML = '';
     } else {
-      timelineEl.innerHTML = timeline.map(t => `
-        <div class="timeline-entry">
-          <span class="timeline-time">${new Date(t.timestamp).toLocaleTimeString()}</span>
-          <span class="timeline-agent">${t.agent}</span>
-          <div class="timeline-headline">${t.headline}</div>
-          <div class="timeline-detail">${t.detail}</div>
+      conflictsEl.innerHTML = pendingConflicts.map(c => `
+        <div class="conflict-card">
+          <span class="hitl-badge">⏸ Human review required</span>
+          <h2>⚠ Conflict detected in ${c.zone_id}</h2>
+          <div class="conflict-claim"><span class="label">Source A (sensor):</span> ${c.claim_a}</div>
+          <div class="conflict-claim"><span class="label">Source B (citizens):</span> ${c.claim_b}</div>
+          <div class="conflict-resolution">
+            <span class="winner">Coordinator recommends: ${c.winning_source.replace('_', ' ')}</span><br/>
+            ${c.reasoning}
+          </div>
+          <div class="conflict-buttons">
+            <button class="btn-approve" onclick="approveConflict('${c.conflict_id}', true)">✓ Approve — escalate zone</button>
+            <button class="btn-reject" onclick="approveConflict('${c.conflict_id}', false)">✗ Reject — keep sensor reading</button>
+          </div>
         </div>
       `).join('');
+    }
+
+    const timelineEl = document.getElementById('timeline');
+    const sorted = [...timeline].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    if (sorted.length === 0) {
+      timelineEl.innerHTML = '<div class="empty">No activity yet — run a demo step below.</div>';
+    } else {
+      timelineEl.innerHTML = sorted.map(t => `
+        <div class="chat-entry">
+          <span class="agent-tag ${t.agent}">${t.agent}</span>
+          <div class="chat-text">
+            <div class="headline">${t.headline}</div>
+            <div class="detail">${t.detail}</div>
+          </div>
+          <span class="chat-time">${new Date(t.timestamp).toLocaleTimeString()}</span>
+        </div>
+      `).join('');
+      timelineEl.scrollTop = timelineEl.scrollHeight;
     }
   } catch (e) {
     console.error('Refresh failed', e);
   }
 }
 
+async function approveConflict(conflictId, approved) {
+  await fetch(`/coordinator/approve?conflict_id=${conflictId}&approved=${approved}`, { method: 'POST' });
+  refresh();
+}
+
+async function runStep(endpoint, btnEl) {
+  btnEl.disabled = true;
+  try {
+    await fetch(endpoint, { method: 'POST' });
+    await refresh();
+  } catch (e) {
+    console.error('Step failed', e);
+  } finally {
+    btnEl.disabled = false;
+  }
+}
+
 refresh();
-setInterval(refresh, 3000);
+setInterval(refresh, 4000);
 </script>
 
 </body>
