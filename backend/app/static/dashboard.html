@@ -90,6 +90,11 @@
   .photo-card .photo-scores { display: flex; gap: 8px; font-size: 11px; align-items: center; margin-bottom: 8px; }
   .photo-card .score-pill { background: #f0f0f0; padding: 2px 7px; border-radius: 10px; }
   .photo-card .score-pill.priority { background: #ffebee; color: #b71c1c; font-weight: 600; }
+  .priority-math { font-size: 10px; color: #999; margin-top: -2px; margin-bottom: 6px; }
+  .findings-row { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+  .finding-chip { font-size: 10px; background: #eef2f7; color: #34495e; padding: 2px 6px; border-radius: 8px; }
+  .finding-chip.hazard { background: #fff3e0; color: #e65100; }
+  .finding-chip.structural { background: #ffebee; color: #b71c1c; }
   .photo-review-buttons { display: flex; gap: 6px; }
   .photo-review-buttons button { flex: 1; font-size: 11px; padding: 6px; border-radius: 5px; border: none; cursor: pointer; }
   .btn-photo-approve { background: #2e7d32; color: white; }
@@ -241,17 +246,30 @@ async function refresh() {
         const displayDescription = r.edited_image_description || r.image_description;
         const displaySeverity = r.edited_severity_score !== null && r.edited_severity_score !== undefined ? r.edited_severity_score : r.severity_score;
 
+        const findingsChips = `
+          ${r.water_level ? `<span class="finding-chip">💧 ${r.water_level}</span>` : ''}
+          ${r.structural_damage_visible ? `<span class="finding-chip structural">⚠ structural damage</span>` : ''}
+          ${(r.visible_hazards || []).map(h => `<span class="finding-chip hazard">${h}</span>`).join('')}
+          ${r.people_visible_count !== null && r.people_visible_count !== undefined ? `<span class="finding-chip">👤 ${r.people_visible_count} visible</span>` : ''}
+        `;
+
+        const priorityMath = r.sos_history_weight > 0
+          ? `severity ${displaySeverity.toFixed(1)} + ${r.sos_history_weight.toFixed(1)} zone history = priority ${r.final_priority_score.toFixed(1)}`
+          : `severity ${displaySeverity.toFixed(1)} + 0 zone history (no prior SOS activity) = priority ${r.final_priority_score.toFixed(1)}`;
+
         return `
         <div class="photo-card ${statusClass}">
           <img src="/static/images/${r.zone_id}.jpg" alt="${r.zone_id} damage photo" />
           <div class="photo-body">
             <div class="photo-zone">${r.zone_id} ${tag}</div>
+            <div class="findings-row">${findingsChips}</div>
             ${isPending
               ? `<textarea class="edit-desc" id="desc-${r.report_id}" rows="2">${r.image_description}</textarea>
                  <div class="photo-scores">
                    Severity: <input class="edit-severity" id="sev-${r.report_id}" type="number" step="0.1" min="0" max="10" value="${r.severity_score}" />
                    <span class="score-pill priority">Priority: ${r.final_priority_score.toFixed(1)}</span>
                  </div>
+                 <div class="priority-math">${priorityMath}</div>
                  <div class="photo-review-buttons">
                    <button class="btn-photo-approve" onclick="approveDamage('${r.report_id}', true)">✓ Approve</button>
                    <button class="btn-photo-reject" onclick="approveDamage('${r.report_id}', false)">✗ Reject</button>
@@ -261,6 +279,7 @@ async function refresh() {
                    <span class="score-pill">Severity: ${displaySeverity.toFixed(1)}</span>
                    <span class="score-pill priority">Priority: ${r.final_priority_score.toFixed(1)}</span>
                  </div>
+                 <div class="priority-math">${priorityMath}</div>
                  ${r.human_approved === false ? '<div class="review-result">Excluded from relief priority ranking</div>' : ''}
                  ${r.edited_severity_score !== null && r.edited_severity_score !== undefined ? `<div class="review-result">Qwen-VL originally proposed ${r.severity_score.toFixed(1)} — human corrected</div>` : ''}`
             }
