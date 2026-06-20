@@ -129,6 +129,7 @@ class ConflictEvent(BaseModel):
     resolution: str                 # what the Coordinator decided
     winning_source: SourceType
     reasoning: str                  # Qwen's explanation, shown prominently in UI
+    original_risk_level: RiskLevel  # the sensor's reading BEFORE escalation — needed to revert correctly if a human rejects
     requires_human_approval: bool = True
     human_approved: Optional[bool] = None
     detected_at: datetime = Field(default_factory=datetime.utcnow)
@@ -143,16 +144,29 @@ class DamageReport(BaseModel):
     A citizen-submitted photo + Qwen-VL's analysis. Severity score is
     weighted by the zone's SOS history from Phase 2 (Disaster Memory),
     not assessed in isolation — this is the cross-phase connection.
+
+    Human-in-the-loop: Qwen-VL's finding starts as a PROPOSAL. It does
+    not count toward relief priority until a human reviews it — and
+    may edit the severity score or description first. This mirrors the
+    same human-checkpoint pattern used for CoordinatorAgent's conflicts,
+    so every AI judgment in the system has a review step before it
+    drives action.
     """
     report_id: str
     zone_id: str
     citizen_id: str
-    image_description: str          # Qwen-VL's description of the photo
-    severity_score: float           # 0-10
+    image_description: str          # Qwen-VL's ORIGINAL description (preserved for audit, even if edited)
+    severity_score: float           # Qwen-VL's ORIGINAL severity score (preserved for audit, even if edited)
     sos_history_weight: float       # boost applied because zone had high SOS volume
-    final_priority_score: float     # severity_score + sos_history_weight, capped at 10
+    final_priority_score: float     # severity_score + sos_history_weight, capped at 10 — based on CURRENT (possibly edited) severity
     reasoning: str
     submitted_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # Human-in-the-loop fields
+    human_approved: Optional[bool] = None       # None = pending review
+    edited_severity_score: Optional[float] = None    # set if a human overrides Qwen's score
+    edited_image_description: Optional[str] = None   # set if a human overrides Qwen's description
+    reviewed_at: Optional[datetime] = None
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from datetime import datetime
 import os
 from dotenv import load_dotenv
@@ -10,12 +11,17 @@ from app.models.schemas import WeatherSignal, SOSMessage
 from app.agents.watcher_agent import assess_zone_risk
 from app.agents.responder_agent import triage_sos
 from app.agents.coordinator_agent import check_for_conflict, approve_conflict
-from app.agents.recovery_agent import assess_damage
+from app.agents.recovery_agent import assess_damage, assess_damage_from_image, approve_damage_report
 from app.memory.store import disaster_memory
 
 app = FastAPI(title="Lifeline Relay API")
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "app", "static")
+IMAGES_DIR = os.path.join(STATIC_DIR, "images")
+
+# Serve the zone photos as static files so the dashboard can display
+# them directly (e.g. /static/images/zone-b.jpg)
+app.mount("/static/images", StaticFiles(directory=IMAGES_DIR), name="images")
 
 
 @app.get("/")
@@ -88,11 +94,43 @@ async def coordinator_approve(conflict_id: str, approved: bool):
 @app.post("/recovery/assess")
 async def recovery_assess(zone_id: str, citizen_id: str, image_description: str, days_since_disaster: int = None):
     """
-    Phase 3 entry point. Feed in a damage description (standing in for
-    a real Qwen-VL photo analysis), get back RecoveryAgent's severity
-    score AND the memory-weighted final priority score.
+    Phase 3 entry point (text path). Feed in a damage description
+    (manual reference field on the simulator), get back RecoveryAgent's
+    severity score AND the memory-weighted final priority score.
     """
     report = await assess_damage(zone_id, citizen_id, image_description, days_since_disaster)
+    return report
+
+
+@app.post("/recovery/assess-image")
+async def recovery_assess_image(zone_id: str, citizen_id: str, days_since_disaster: int = None):
+    """
+    Phase 3 entry point (real vision path). Sends the actual preset
+    photo for this zone to Qwen-VL for genuine multimodal analysis.
+    """
+    image_path = os.path.join(IMAGES_DIR, f"{zone_id}.jpg")
+    if not os.path.exists(image_path):
+        return {"error": f"No preset image found for zone {zone_id}"}
+    report = await assess_damage_from_image(zone_id, citizen_id, image_path, days_since_disaster)
+    return report
+
+
+@app.get("/damage-reports")
+def get_damage_reports():
+    """Latest damage report per zone, powers the photo gallery on the dashboard."""
+    return disaster_memory.get_damage_reports()
+
+
+@app.post("/recovery/approve")
+async def recovery_approve(report_id: str, approved: bool, edited_severity_score: float = None, edited_image_description: str = None):
+    """
+    Human-in-the-loop endpoint for Phase 3. Approve Qwen-VL's damage
+    finding as-is, or supply edited_severity_score / edited_image_description
+    to correct it first. Rejecting excludes the report from relief priority.
+    """
+    report = await approve_damage_report(report_id, approved, edited_severity_score, edited_image_description)
+    if not report:
+        return {"error": "Damage report not found"}
     return report
 
 
@@ -186,13 +224,11 @@ async def demo_phase2_step2():
 
 @app.post("/demo/phase3/step1")
 async def demo_phase3_step1():
-    """11:30 AM — damage reports across all 3 zones, scored with memory-weighted priority."""
+    """11:30 AM — damage reports across all 3 zones, using REAL Qwen-VL
+    analysis of the preset photos, scored with memory-weighted priority."""
     results = []
-    for zone_id, citizen_id, description in [
-        ("zone-a", "demo-photo-a", "minor water pooling near building entrance, no structural damage visible"),
-        ("zone-b", "demo-photo-b", "severe flooding, water up to first-floor windows, visible structural damage to walls"),
-        ("zone-c", "demo-photo-c", "flooded street, parked cars partially submerged, moderate debris"),
-    ]:
-        report = await assess_damage(zone_id, citizen_id, description)
+    for zone_id in ["zone-a", "zone-b", "zone-c"]:
+        image_path = os.path.join(IMAGES_DIR, f"{zone_id}.jpg")
+        report = await assess_damage_from_image(zone_id, f"demo-photo-{zone_id}", image_path, days_since_disaster=2)
         results.append(report)
     return {"step": "phase3_step1", "results": results}
