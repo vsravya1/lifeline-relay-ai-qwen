@@ -74,7 +74,14 @@ async def check_for_conflict(zone_id: str) -> ConflictEvent | None:
 
     disaster_memory.set_agent_status("CoordinatorAgent", "processing")
 
-    claim_a = f"WatcherAgent (weather sensor) rated zone {zone_id} as {zone.current_risk_level.value.upper()} risk."
+    # Capture the ORIGINAL sensor reading before any mutation happens —
+    # zone is a reference to the live memory object, so if we read
+    # zone.current_risk_level again after update_zone_risk() below,
+    # we'd see the already-escalated value, not what the sensor
+    # actually said at the time the conflict was detected.
+    original_risk_level = zone.current_risk_level
+
+    claim_a = f"WatcherAgent (weather sensor) rated zone {zone_id} as {original_risk_level.value.upper()} risk."
     claim_b = f"ResponderAgent reports {zone.sos_count} SOS messages from zone {zone_id}, including {zone.critical_sos_count} critical."
 
     user_prompt = (
@@ -100,6 +107,7 @@ async def check_for_conflict(zone_id: str) -> ConflictEvent | None:
         resolution=resolution,
         winning_source=winning_source,
         reasoning=reasoning,
+        original_risk_level=original_risk_level,
         requires_human_approval=True,
         human_approved=None,  # awaiting human review
     )
@@ -115,7 +123,7 @@ async def check_for_conflict(zone_id: str) -> ConflictEvent | None:
         entry_id=str(uuid.uuid4()),
         agent=AgentName.COORDINATOR,
         zone_id=zone_id,
-        headline=f"⚠ Conflict detected in {zone_id}: sensor said {zone.current_risk_level.value.upper()}, "
+        headline=f"⚠ Conflict detected in {zone_id}: sensor said {original_risk_level.value.upper()}, "
                   f"but {zone.sos_count} SOS reports say otherwise. Resolved: {winning_source.value} wins.",
         detail=reasoning,
     ))
@@ -152,11 +160,10 @@ async def approve_conflict(conflict_id: str, approved: bool) -> ConflictEvent | 
         # rejecting actually changes system state, not just dismisses
         # a notification.
         disaster_memory.set_active_conflict(conflict.zone_id, None)
-        original_risk = RiskLevel.MEDIUM if "MEDIUM" in conflict.claim_a else RiskLevel.LOW
-        disaster_memory.update_zone_risk(conflict.zone_id, original_risk)
+        disaster_memory.update_zone_risk(conflict.zone_id, conflict.original_risk_level)
         headline = (
             f"✗ Human REJECTED Coordinator's resolution for {conflict.zone_id} — "
-            f"reverted to {original_risk.value.upper()} per original sensor reading"
+            f"reverted to {conflict.original_risk_level.value.upper()} per original sensor reading"
         )
 
     disaster_memory.log(TimelineEntry(
