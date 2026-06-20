@@ -95,6 +95,16 @@
   .btn-photo-approve { background: #2e7d32; color: white; }
   .btn-photo-reject { background: #c62828; color: white; }
   .review-result { font-size: 10.5px; color: #777; margin-top: 6px; font-style: italic; }
+
+  .relief-section { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 14px; }
+  .relief-section h2 { margin: 0 0 4px; font-size: 14px; }
+  .relief-section .relief-sub { font-size: 11px; color: #999; margin-bottom: 12px; }
+  .relief-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .relief-bar-row .relief-zone { width: 60px; font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  .relief-bar-track { flex: 1; height: 18px; background: #f0f0f0; border-radius: 9px; overflow: hidden; }
+  .relief-bar-fill { height: 100%; background: #1b5e20; border-radius: 9px; transition: width 0.4s; }
+  .relief-units { width: 90px; text-align: right; font-size: 12px; font-weight: 600; }
+  .relief-pending { font-size: 11px; color: #999; margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -112,6 +122,7 @@
     <div class="zones" id="zones"></div>
     <div id="conflicts-section"></div>
     <div id="photo-gallery-section"></div>
+    <div id="relief-allocation-section"></div>
     <div class="chat-log">
       <h2>Agent activity log</h2>
       <div id="timeline"></div>
@@ -158,14 +169,15 @@ function statusLabel(status) {
 
 async function refresh() {
   try {
-    const [zonesRes, timelineRes, conflictsRes, statusRes, damageRes] = await Promise.all([
-      fetch('/zones'), fetch('/timeline'), fetch('/conflicts'), fetch('/agent-status'), fetch('/damage-reports')
+    const [zonesRes, timelineRes, conflictsRes, statusRes, damageRes, reliefRes] = await Promise.all([
+      fetch('/zones'), fetch('/timeline'), fetch('/conflicts'), fetch('/agent-status'), fetch('/damage-reports'), fetch('/relief-allocation')
     ]);
     const zones = await zonesRes.json();
     const timeline = await timelineRes.json();
     const conflicts = await conflictsRes.json();
     const agentStatus = await statusRes.json();
     const damageReports = await damageRes.json();
+    const relief = await reliefRes.json();
 
     const agentsEl = document.getElementById('agents-panel');
     agentsEl.innerHTML = Object.entries(AGENT_INFO).map(([name, info]) => `
@@ -255,6 +267,29 @@ async function refresh() {
           </div>
         </div>
       `}).join('') + `</div>`;
+    }
+
+    const reliefEl = document.getElementById('relief-allocation-section');
+    if (relief.allocations.length === 0) {
+      reliefEl.innerHTML = '';
+    } else {
+      const maxUnits = Math.max(...relief.allocations.map(a => a.units), 1);
+      reliefEl.innerHTML = `
+        <div class="relief-section">
+          <h2>Relief allocation — Phase 3 (recovery)</h2>
+          <div class="relief-sub">Based on approved priority scores · ${relief.allocated_units} of ${relief.total_units} relief units assigned</div>
+          ${relief.allocations.map(a => `
+            <div class="relief-bar-row">
+              <div class="relief-zone">${a.zone_id}</div>
+              <div class="relief-bar-track">
+                <div class="relief-bar-fill" style="width:${(a.units / relief.total_units * 100).toFixed(0)}%"></div>
+              </div>
+              <div class="relief-units">${a.units} of ${relief.total_units} units</div>
+            </div>
+          `).join('')}
+          ${relief.pending_zones.length > 0 ? `<div class="relief-pending">Waiting on approval: ${relief.pending_zones.join(', ')} — not yet included in allocation</div>` : ''}
+        </div>
+      `;
     }
 
     const timelineEl = document.getElementById('timeline');
