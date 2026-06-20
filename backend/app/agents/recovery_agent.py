@@ -102,11 +102,12 @@ def _calculate_history_weight(sos_count: int, critical_sos_count: int, vulnerabi
 
 
 VISION_SYSTEM_PROMPT = """You are RecoveryAgent, part of a disaster response system called Lifeline Relay.
-You are looking at an actual photo of flood damage. Score severity from 0-10 based on
-what you genuinely observe in the image — water depth, structural damage, debris, and
-visible danger to people or property.
+You are looking at an actual photo of flood damage. Analyze what you genuinely observe —
+water depth, structural damage, visible hazards, and people in the scene — and score
+overall severity from 0-10 based on that visual evidence alone (do not factor in
+anything except what's visible in this photo).
 Respond ONLY with JSON in this exact shape, no other text:
-{"severity_score": <float 0-10>, "image_description": "<one sentence description of what you actually see in the photo>", "reasoning": "<one sentence explanation of the severity score based on visual evidence>"}
+{"severity_score": <float 0-10>, "image_description": "<one sentence description of what you actually see in the photo>", "reasoning": "<one sentence explanation of the severity score based on visual evidence>", "water_level": "<short phrase, e.g. 'ankle-deep', 'waist-deep', 'submerged to roofline', or 'none visible'>", "structural_damage_visible": <true or false>, "visible_hazards": [<list of short strings, e.g. "debris", "downed power lines", "fast-moving water" — empty list if none>], "people_visible_count": <integer, 0 if none visible>}
 """
 
 
@@ -134,6 +135,10 @@ async def assess_damage_from_image(
     severity_score = float(result.get("severity_score", 5.0))
     image_description = result.get("image_description", "No description returned.")
     reasoning = result.get("reasoning", "No reasoning provided.")
+    water_level = result.get("water_level")
+    structural_damage_visible = result.get("structural_damage_visible")
+    visible_hazards = result.get("visible_hazards") or []
+    people_visible_count = result.get("people_visible_count")
 
     zone = disaster_memory.get_zone(zone_id)
     history_weight = _calculate_history_weight(
@@ -150,6 +155,10 @@ async def assess_damage_from_image(
         sos_history_weight=history_weight,
         final_priority_score=final_priority_score,
         reasoning=reasoning,
+        water_level=water_level,
+        structural_damage_visible=structural_damage_visible,
+        visible_hazards=visible_hazards,
+        people_visible_count=people_visible_count,
         human_approved=None,
     )
 
