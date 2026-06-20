@@ -97,24 +97,40 @@ class QwenClient:
             return {
                 "severity_score": 2.5,
                 "image_description": "Minor surface water pooling near a building entrance, people walking through shallow water. No structural damage visible.",
-                "reasoning": "Water depth is shallow and people are mobile, indicating low immediate risk."
+                "reasoning": "Water depth is shallow and people are mobile, indicating low immediate risk.",
+                "water_level": "ankle-deep",
+                "structural_damage_visible": False,
+                "visible_hazards": [],
+                "people_visible_count": 2,
             }
         if "zone-b" in filename:
             return {
                 "severity_score": 9.0,
                 "image_description": "A house almost completely submerged, with only the roofline and chimneys visible above the waterline.",
-                "reasoning": "Near-total submersion of the structure indicates catastrophic flooding and severe risk to anyone still inside."
+                "reasoning": "Near-total submersion of the structure indicates catastrophic flooding and severe risk to anyone still inside.",
+                "water_level": "submerged to roofline",
+                "structural_damage_visible": True,
+                "visible_hazards": ["standing floodwater", "potential structural collapse"],
+                "people_visible_count": 0,
             }
         if "zone-c" in filename:
             return {
                 "severity_score": 5.8,
                 "image_description": "A person wading through knee-deep water with floating debris, including what appears to be a mattress, in a residential street.",
-                "reasoning": "Significant flooding with debris poses real hazards, though the scene shows people still mobile rather than trapped."
+                "reasoning": "Significant flooding with debris poses real hazards, though the scene shows people still mobile rather than trapped.",
+                "water_level": "knee-deep",
+                "structural_damage_visible": False,
+                "visible_hazards": ["floating debris"],
+                "people_visible_count": 1,
             }
         return {
             "severity_score": 5.0,
             "image_description": "Flood damage visible in the image.",
-            "reasoning": "Mock vision fallback — no zone-specific match found."
+            "reasoning": "Mock vision fallback — no zone-specific match found.",
+            "water_level": "unknown",
+            "structural_damage_visible": None,
+            "visible_hazards": [],
+            "people_visible_count": 0,
         }
 
     async def _real_call(self, system_prompt: str, user_prompt: str) -> dict:
