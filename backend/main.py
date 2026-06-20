@@ -11,7 +11,7 @@ from app.models.schemas import WeatherSignal, SOSMessage
 from app.agents.watcher_agent import assess_zone_risk
 from app.agents.responder_agent import triage_sos
 from app.agents.coordinator_agent import check_for_conflict, approve_conflict
-from app.agents.recovery_agent import assess_damage, assess_damage_from_image, approve_damage_report
+from app.agents.recovery_agent import assess_damage, assess_damage_from_image, approve_damage_report, calculate_relief_allocation
 from app.memory.store import disaster_memory
 
 app = FastAPI(title="Lifeline Relay API")
@@ -113,6 +113,24 @@ async def recovery_assess_image(zone_id: str, citizen_id: str, days_since_disast
         return {"error": f"No preset image found for zone {zone_id}"}
     report = await assess_damage_from_image(zone_id, citizen_id, image_path, days_since_disaster)
     return report
+
+
+@app.get("/relief-allocation")
+def get_relief_allocation():
+    """
+    Ranked relief-unit allocation across zones, based on APPROVED damage
+    reports only. Powers the 'where do relief crews go' section on the
+    dashboard — a Phase 3 (recovery) decision, distinct from Phase 2's
+    rescue-urgency triage.
+    """
+    reports = disaster_memory.get_damage_reports()
+    allocation = calculate_relief_allocation(reports)
+    return {
+        "total_units": 10,
+        "allocated_units": sum(a["units"] for a in allocation),
+        "allocations": allocation,
+        "pending_zones": [r.zone_id for r in reports if r.human_approved is None],
+    }
 
 
 @app.get("/damage-reports")
