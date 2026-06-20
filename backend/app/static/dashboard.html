@@ -72,6 +72,29 @@
 
   .nav { text-align: center; margin-top: 14px; }
   .nav a { color: #999; text-decoration: none; font-size: 12px; }
+
+  .photo-gallery { display: flex; gap: 12px; }
+  .photo-card { flex: 1; background: white; border-radius: 10px; overflow: hidden; border: 1px solid #ddd; }
+  .photo-card.pending { border: 2px solid #f9a825; }
+  .photo-card.approved { border: 2px solid #2e7d32; }
+  .photo-card.rejected { border: 2px solid #c62828; opacity: 0.7; }
+  .photo-card img { width: 100%; height: 140px; object-fit: cover; display: block; }
+  .photo-card .photo-body { padding: 10px; }
+  .photo-card .photo-zone { font-weight: 600; font-size: 12px; text-transform: uppercase; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
+  .pending-tag { background: #fff3e0; color: #e65100; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
+  .approved-tag { background: #e8f5e9; color: #1b5e20; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
+  .rejected-tag { background: #ffebee; color: #b71c1c; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
+  .photo-card .photo-finding { font-size: 11.5px; color: #444; margin-bottom: 6px; }
+  .photo-card textarea.edit-desc { width: 100%; font-size: 11px; border: 1px solid #ccc; border-radius: 4px; padding: 5px; margin-bottom: 6px; resize: vertical; }
+  .photo-card input.edit-severity { width: 50px; font-size: 11px; border: 1px solid #ccc; border-radius: 4px; padding: 3px 5px; }
+  .photo-card .photo-scores { display: flex; gap: 8px; font-size: 11px; align-items: center; margin-bottom: 8px; }
+  .photo-card .score-pill { background: #f0f0f0; padding: 2px 7px; border-radius: 10px; }
+  .photo-card .score-pill.priority { background: #ffebee; color: #b71c1c; font-weight: 600; }
+  .photo-review-buttons { display: flex; gap: 6px; }
+  .photo-review-buttons button { flex: 1; font-size: 11px; padding: 6px; border-radius: 5px; border: none; cursor: pointer; }
+  .btn-photo-approve { background: #2e7d32; color: white; }
+  .btn-photo-reject { background: #c62828; color: white; }
+  .review-result { font-size: 10.5px; color: #777; margin-top: 6px; font-style: italic; }
 </style>
 </head>
 <body>
@@ -88,6 +111,7 @@
   <div class="main-col">
     <div class="zones" id="zones"></div>
     <div id="conflicts-section"></div>
+    <div id="photo-gallery-section"></div>
     <div class="chat-log">
       <h2>Agent activity log</h2>
       <div id="timeline"></div>
@@ -134,13 +158,14 @@ function statusLabel(status) {
 
 async function refresh() {
   try {
-    const [zonesRes, timelineRes, conflictsRes, statusRes] = await Promise.all([
-      fetch('/zones'), fetch('/timeline'), fetch('/conflicts'), fetch('/agent-status')
+    const [zonesRes, timelineRes, conflictsRes, statusRes, damageRes] = await Promise.all([
+      fetch('/zones'), fetch('/timeline'), fetch('/conflicts'), fetch('/agent-status'), fetch('/damage-reports')
     ]);
     const zones = await zonesRes.json();
     const timeline = await timelineRes.json();
     const conflicts = await conflictsRes.json();
     const agentStatus = await statusRes.json();
+    const damageReports = await damageRes.json();
 
     const agentsEl = document.getElementById('agents-panel');
     agentsEl.innerHTML = Object.entries(AGENT_INFO).map(([name, info]) => `
@@ -189,6 +214,49 @@ async function refresh() {
       `).join('');
     }
 
+    const galleryEl = document.getElementById('photo-gallery-section');
+    if (damageReports.length === 0) {
+      galleryEl.innerHTML = '';
+    } else {
+      galleryEl.innerHTML = `<div class="photo-gallery">` + damageReports.map(r => {
+        const statusClass = r.human_approved === true ? 'approved' : r.human_approved === false ? 'rejected' : 'pending';
+        const tag = r.human_approved === true
+          ? '<span class="approved-tag">✓ Approved</span>'
+          : r.human_approved === false
+          ? '<span class="rejected-tag">✗ Rejected</span>'
+          : '<span class="pending-tag">⏸ Pending review</span>';
+        const isPending = r.human_approved === null;
+        const displayDescription = r.edited_image_description || r.image_description;
+        const displaySeverity = r.edited_severity_score !== null && r.edited_severity_score !== undefined ? r.edited_severity_score : r.severity_score;
+
+        return `
+        <div class="photo-card ${statusClass}">
+          <img src="/static/images/${r.zone_id}.jpg" alt="${r.zone_id} damage photo" />
+          <div class="photo-body">
+            <div class="photo-zone">${r.zone_id} ${tag}</div>
+            ${isPending
+              ? `<textarea class="edit-desc" id="desc-${r.report_id}" rows="2">${r.image_description}</textarea>
+                 <div class="photo-scores">
+                   Severity: <input class="edit-severity" id="sev-${r.report_id}" type="number" step="0.1" min="0" max="10" value="${r.severity_score}" />
+                   <span class="score-pill priority">Priority: ${r.final_priority_score.toFixed(1)}</span>
+                 </div>
+                 <div class="photo-review-buttons">
+                   <button class="btn-photo-approve" onclick="approveDamage('${r.report_id}', true)">✓ Approve</button>
+                   <button class="btn-photo-reject" onclick="approveDamage('${r.report_id}', false)">✗ Reject</button>
+                 </div>`
+              : `<div class="photo-finding">${displayDescription}</div>
+                 <div class="photo-scores">
+                   <span class="score-pill">Severity: ${displaySeverity.toFixed(1)}</span>
+                   <span class="score-pill priority">Priority: ${r.final_priority_score.toFixed(1)}</span>
+                 </div>
+                 ${r.human_approved === false ? '<div class="review-result">Excluded from relief priority ranking</div>' : ''}
+                 ${r.edited_severity_score !== null && r.edited_severity_score !== undefined ? `<div class="review-result">Qwen-VL originally proposed ${r.severity_score.toFixed(1)} — human corrected</div>` : ''}`
+            }
+          </div>
+        </div>
+      `}).join('') + `</div>`;
+    }
+
     const timelineEl = document.getElementById('timeline');
     const sorted = [...timeline].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     if (sorted.length === 0) {
@@ -213,6 +281,18 @@ async function refresh() {
 
 async function approveConflict(conflictId, approved) {
   await fetch(`/coordinator/approve?conflict_id=${conflictId}&approved=${approved}`, { method: 'POST' });
+  refresh();
+}
+
+async function approveDamage(reportId, approved) {
+  let url = `/recovery/approve?report_id=${reportId}&approved=${approved}`;
+  if (approved) {
+    const sevInput = document.getElementById(`sev-${reportId}`);
+    const descInput = document.getElementById(`desc-${reportId}`);
+    if (sevInput) url += `&edited_severity_score=${sevInput.value}`;
+    if (descInput) url += `&edited_image_description=${encodeURIComponent(descInput.value)}`;
+  }
+  await fetch(url, { method: 'POST' });
   refresh();
 }
 
