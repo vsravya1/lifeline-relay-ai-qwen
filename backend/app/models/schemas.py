@@ -156,10 +156,20 @@ class DamageReport(BaseModel):
     zone_id: str
     citizen_id: str
     image_description: str          # Qwen-VL's ORIGINAL description (preserved for audit, even if edited)
-    severity_score: float           # Qwen-VL's ORIGINAL severity score (preserved for audit, even if edited)
-    sos_history_weight: float       # boost applied because zone had high SOS volume
-    final_priority_score: float     # severity_score + sos_history_weight, capped at 10 — based on CURRENT (possibly edited) severity
+    severity_score: float           # Qwen-VL's ORIGINAL visual severity, scored from the photo ALONE (0-10)
+    sos_history_weight: float       # boost applied because zone had high SOS volume — the cross-phase memory effect
+    final_priority_score: float     # severity_score + sos_history_weight, capped at 10 — what actually drives relief allocation
     reasoning: str
+
+    # Structured findings — specific, checkable observations Qwen-VL
+    # extracted directly from the photo, not just a single severity
+    # number. These make the vision call's output inspectable: a
+    # reviewer can look at the photo and verify each claim individually.
+    water_level: Optional[str] = None              # e.g. "ankle-deep", "waist-deep", "submerged to roofline"
+    structural_damage_visible: Optional[bool] = None   # does the photo show visible structural damage (cracks, collapse, etc.)
+    visible_hazards: Optional[list[str]] = None        # e.g. ["debris", "downed power lines", "fast-moving water"]
+    people_visible_count: Optional[int] = None         # number of people visible in the photo, if any
+
     submitted_at: datetime = Field(default_factory=datetime.utcnow)
 
     # Human-in-the-loop fields
