@@ -4,6 +4,12 @@ A multi-agent disaster intelligence system with conflict-aware decision making a
 
 Built for the Global AI Hackathon with Qwen Cloud (Track 3: Agent Society).
 
+![Lifeline Relay](wordcloud.png)
+
+## Architecture
+
+![Architecture diagram](architecture.png)
+
 ## Why this exists
 
 A year ago, several children died at a camp near Austin during a flash flood — not because the warning data didn't exist, but because nobody was coordinating it with what was actually happening on the ground. Around the same time, earthquakes and floods across parts of Asia were overwhelming emergency response teams in a similar way: sensors said one thing, citizen reports said another, and there was no clear process for deciding which one to trust in the moment.
@@ -25,20 +31,6 @@ The system runs through three phases, and each one writes to a shared memory the
 > **On the vision piece specifically:** every damage assessment in the demo is a real `qwen-vl-plus` call against an actual JPEG, base64-encoded and sent over the wire — not a human-written description fed to a text model and labeled as "vision." If you read the description Qwen returns for a photo, it's describing what's actually in that specific image (water level, debris, structural damage), because it actually looked at it.
 
 Every one of these decisions, across all three phases, gets logged in plain language to a live Decision Timeline on the dashboard. The point is that you can watch the system reason, not just trust that it did.
-
-## Architecture
-
-```
-WeatherSignal ──▶ WatcherAgent ──▶ ZoneRiskAssessment ─┐
-                                                         ├──▶ CoordinatorAgent ──▶ ConflictEvent (human-approved)
-SOSMessage ──────▶ ResponderAgent ──▶ SOSAssessment ────┘                              │
-                                                                                          ▼
-                                                                                  Disaster Memory
-                                                                              (per-zone risk, SOS, history)
-                                                                                          │
-DamagePhoto ─────▶ RecoveryAgent (Qwen-VL) ──▶ DamageReport ──▶ Relief Allocation
-                         (reads zone history above to weight severity)
-```
 
 The shared Disaster Memory is the actual mechanism that connects the three phases — without it, this would just be three separate demos that happen to share a UI.
 
