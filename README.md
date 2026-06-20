@@ -4,11 +4,11 @@ A multi-agent disaster intelligence system with conflict-aware decision making a
 
 Built for the Global AI Hackathon with Qwen Cloud (Track 3: Agent Society).
 
-![Lifeline Relay](wordcloud.png)
+![Lifeline Relay](docs/wordcloud.png)
 
 ## Architecture
 
-![Architecture diagram](architecture.png)
+![Architecture diagram](docs/architecture.png)
 
 ## Why this exists
 
