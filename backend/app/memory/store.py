@@ -13,7 +13,7 @@ dependency, and perfectly demoable.
 """
 
 from typing import Dict, List, Optional
-from app.models.schemas import ZoneMemory, TimelineEntry, RiskLevel, ConflictEvent
+from app.models.schemas import ZoneMemory, TimelineEntry, RiskLevel, ConflictEvent, DamageReport
 
 
 class DisasterMemory:
@@ -21,6 +21,7 @@ class DisasterMemory:
         self.zones: Dict[str, ZoneMemory] = {}
         self.timeline: List[TimelineEntry] = []
         self.conflicts: Dict[str, ConflictEvent] = {}
+        self.damage_reports: List[DamageReport] = []
         self._entry_counter = 0
         # Tracks each agent's current display status for the dashboard's
         # agent panel — "idle", "processing", or "conflict_found".
@@ -66,6 +67,17 @@ class DisasterMemory:
     def add_conflict(self, conflict: ConflictEvent):
         self.conflicts[conflict.conflict_id] = conflict
         self.set_active_conflict(conflict.zone_id, conflict.conflict_id)
+
+    # --- Damage reports ---
+
+    def add_damage_report(self, report: DamageReport):
+        # Keep only the latest report per zone, so the gallery shows
+        # one current photo+finding per zone rather than accumulating.
+        self.damage_reports = [r for r in self.damage_reports if r.zone_id != report.zone_id]
+        self.damage_reports.append(report)
+
+    def get_damage_reports(self) -> List[DamageReport]:
+        return sorted(self.damage_reports, key=lambda r: r.zone_id)
 
     # --- Decision Timeline ---
 
