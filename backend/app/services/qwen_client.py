@@ -15,6 +15,7 @@ responses so you can build and demo the full pipeline immediately.
 
 import os
 import json
+import base64
 import httpx
 from typing import Optional
 
@@ -22,6 +23,7 @@ USE_MOCK_QWEN = os.getenv("USE_MOCK_QWEN", "true").lower() == "true"
 QWEN_API_KEY = os.getenv("QWEN_API_KEY", "")
 QWEN_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
 QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen-plus")
+QWEN_VL_MODEL = os.getenv("QWEN_VL_MODEL", "qwen-vl-plus")
 
 
 class QwenClient:
@@ -38,6 +40,82 @@ class QwenClient:
             return self._mock_response(system_prompt, user_prompt)
 
         return await self._real_call(system_prompt, user_prompt)
+
+    async def ask_vision(self, system_prompt: str, user_prompt: str, image_path: str) -> dict:
+        """
+        Vision variant — sends an actual image (read from disk, base64-encoded)
+        to Qwen-VL alongside a text prompt. This is the real multimodal call:
+        Qwen genuinely sees the pixels, not a text description of them.
+        """
+        if USE_MOCK_QWEN:
+            return self._mock_vision_response(image_path)
+
+        return await self._real_vision_call(system_prompt, user_prompt, image_path)
+
+    async def _real_vision_call(self, system_prompt: str, user_prompt: str, image_path: str) -> dict:
+        with open(image_path, "rb") as f:
+            image_bytes = f.read()
+        b64_image = base64.b64encode(image_bytes).decode("utf-8")
+
+        # Infer MIME type from file extension — jpg/jpeg/png cover our use case
+        ext = image_path.lower().rsplit(".", 1)[-1]
+        mime = "image/png" if ext == "png" else "image/jpeg"
+
+        headers = {
+            "Authorization": f"Bearer {QWEN_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": QWEN_VL_MODEL,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64_image}"}},
+                        {"type": "text", "text": user_prompt},
+                    ],
+                },
+            ],
+        }
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            response = await client.post(QWEN_BASE_URL, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+
+        raw_text = data["choices"][0]["message"]["content"]
+        cleaned = raw_text.replace("```json", "").replace("```", "").strip()
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            return {"_raw_text": raw_text, "_parse_error": True}
+
+    def _mock_vision_response(self, image_path: str) -> dict:
+        """Mock fallback — keyed off filename so each zone's preset photo gets a distinct, plausible mock result."""
+        filename = image_path.lower()
+        if "zone-a" in filename:
+            return {
+                "severity_score": 2.5,
+                "image_description": "Minor surface water pooling near a building entrance, people walking through shallow water. No structural damage visible.",
+                "reasoning": "Water depth is shallow and people are mobile, indicating low immediate risk."
+            }
+        if "zone-b" in filename:
+            return {
+                "severity_score": 9.0,
+                "image_description": "A house almost completely submerged, with only the roofline and chimneys visible above the waterline.",
+                "reasoning": "Near-total submersion of the structure indicates catastrophic flooding and severe risk to anyone still inside."
+            }
+        if "zone-c" in filename:
+            return {
+                "severity_score": 5.8,
+                "image_description": "A person wading through knee-deep water with floating debris, including what appears to be a mattress, in a residential street.",
+                "reasoning": "Significant flooding with debris poses real hazards, though the scene shows people still mobile rather than trapped."
+            }
+        return {
+            "severity_score": 5.0,
+            "image_description": "Flood damage visible in the image.",
+            "reasoning": "Mock vision fallback — no zone-specific match found."
+        }
 
     async def _real_call(self, system_prompt: str, user_prompt: str) -> dict:
         headers = {
