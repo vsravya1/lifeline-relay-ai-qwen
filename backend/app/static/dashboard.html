@@ -20,6 +20,17 @@
   .agent-status.processing { background: #fff3e0; color: #e65100; }
   .agent-status.conflict_found { background: #ffebee; color: #b71c1c; }
 
+  .inventory-sidebar { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 12px; margin-top: 4px; }
+  .inventory-sidebar .inv-title { font-weight: 600; font-size: 12px; margin-bottom: 8px; color: #444; }
+  .inv-section-label { font-size: 10px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; margin: 6px 0 3px; }
+  .inv-row { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px solid #f5f5f5; }
+  .inv-row:last-child { border-bottom: none; }
+  .inv-name { font-size: 11px; color: #555; text-transform: capitalize; }
+  .inv-count { font-size: 12px; font-weight: 600; }
+  .inv-count.zero { color: #c62828; }
+  .inv-count.low { color: #e65100; }
+  .inv-count.ok { color: #1b5e20; }
+
   .main-col { display: flex; flex-direction: column; gap: 16px; }
 
   .zones { display: flex; gap: 12px; }
@@ -110,6 +121,23 @@
   .relief-bar-fill { height: 100%; background: #1b5e20; border-radius: 9px; transition: width 0.4s; }
   .relief-units { width: 90px; text-align: right; font-size: 12px; font-weight: 600; }
   .relief-pending { font-size: 11px; color: #999; margin-top: 6px; }
+
+  .dispatch-section { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 14px; }
+  .dispatch-section h2 { margin: 0 0 10px; font-size: 14px; }
+  .dispatch-card { border: 2px solid #f9a825; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fffdf5; }
+  .dispatch-card.approved { border-color: #2e7d32; background: #f7fdf7; }
+  .dispatch-card.rejected { border-color: #c62828; background: #fdf7f7; opacity: 0.7; }
+  .dispatch-zone-label { font-weight: 600; font-size: 12px; text-transform: uppercase; margin-bottom: 6px; }
+  .dispatch-reasoning { font-size: 11.5px; color: #555; margin-bottom: 8px; }
+  .dispatch-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .dispatch-row label { font-size: 11px; color: #777; }
+  .dispatch-row select { font-size: 12px; padding: 4px 6px; border-radius: 5px; border: 1px solid #ccc; }
+  .material-checklist { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+  .material-item { display: flex; align-items: center; gap: 4px; font-size: 11px; }
+  .material-item input[type="number"] { width: 40px; font-size: 11px; padding: 2px 4px; border-radius: 4px; border: 1px solid #ccc; }
+  .dispatch-buttons button { margin-right: 8px; padding: 6px 12px; border-radius: 5px; border: none; cursor: pointer; font-size: 11.5px; }
+  .dispatch-final { font-size: 11.5px; color: #444; }
+  .inventory-bar { font-size: 10.5px; color: #888; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
 </style>
 </head>
 <body>
@@ -122,12 +150,17 @@
 <div class="layout">
 
   <div class="agents-panel" id="agents-panel"></div>
+  <div class="inventory-sidebar" id="inventory-sidebar" style="display:none">
+    <div class="inv-title">Resource inventory</div>
+    <div id="inventory-content"></div>
+  </div>
 
   <div class="main-col">
     <div class="zones" id="zones"></div>
     <div id="conflicts-section"></div>
     <div id="photo-gallery-section"></div>
     <div id="relief-allocation-section"></div>
+    <div id="dispatch-section"></div>
     <div class="chat-log">
       <h2>Agent activity log</h2>
       <div id="timeline"></div>
@@ -174,8 +207,8 @@ function statusLabel(status) {
 
 async function refresh() {
   try {
-    const [zonesRes, timelineRes, conflictsRes, statusRes, damageRes, reliefRes] = await Promise.all([
-      fetch('/zones'), fetch('/timeline'), fetch('/conflicts'), fetch('/agent-status'), fetch('/damage-reports'), fetch('/relief-allocation')
+    const [zonesRes, timelineRes, conflictsRes, statusRes, damageRes, reliefRes, dispatchRes, inventoryRes] = await Promise.all([
+      fetch('/zones'), fetch('/timeline'), fetch('/conflicts'), fetch('/agent-status'), fetch('/damage-reports'), fetch('/relief-allocation'), fetch('/resource-allocations'), fetch('/inventory')
     ]);
     const zones = await zonesRes.json();
     const timeline = await timelineRes.json();
@@ -183,6 +216,38 @@ async function refresh() {
     const agentStatus = await statusRes.json();
     const damageReports = await damageRes.json();
     const relief = await reliefRes.json();
+    const dispatches = await dispatchRes.json();
+    const inventory = await inventoryRes.json();
+
+    // Inventory sidebar — only show once there's something to display
+    const invSidebar = document.getElementById('inventory-sidebar');
+    const invContent = document.getElementById('inventory-content');
+    const hasInventoryData = Object.keys(inventory.vehicles || {}).length > 0;
+    if (!hasInventoryData) {
+      invSidebar.style.display = 'none';
+    } else {
+      invSidebar.style.display = 'block';
+      const countClass = (count, total) => count === 0 ? 'zero' : count <= Math.ceil(total * 0.3) ? 'low' : 'ok';
+      const VEHICLE_TOTALS = { helicopter: 1, boat: 3, ground_vehicle: 2 };
+      const MATERIAL_TOTALS = { food: 10, medicine: 6, life_jackets: 8, clean_water: 10 };
+
+      invContent.innerHTML = `
+        <div class="inv-section-label">Vehicles</div>
+        ${Object.entries(inventory.vehicles).map(([k, v]) => `
+          <div class="inv-row">
+            <span class="inv-name">${k.replace('_', ' ')}</span>
+            <span class="inv-count ${countClass(v, VEHICLE_TOTALS[k] || 1)}">${v}</span>
+          </div>
+        `).join('')}
+        <div class="inv-section-label">Materials</div>
+        ${Object.entries(inventory.materials).map(([k, v]) => `
+          <div class="inv-row">
+            <span class="inv-name">${k.replace('_', ' ')}</span>
+            <span class="inv-count ${countClass(v, MATERIAL_TOTALS[k] || 10)}">${v}</span>
+          </div>
+        `).join('')}
+      `;
+    }
 
     const agentsEl = document.getElementById('agents-panel');
     agentsEl.innerHTML = Object.entries(AGENT_INFO).map(([name, info]) => `
@@ -311,6 +376,64 @@ async function refresh() {
       `;
     }
 
+    const VEHICLE_OPTIONS = ['helicopter', 'boat', 'ground_vehicle'];
+    const MATERIAL_TYPES = ['food', 'medicine', 'life_jackets', 'clean_water'];
+
+    const dispatchEl = document.getElementById('dispatch-section');
+    if (dispatches.length === 0) {
+      dispatchEl.innerHTML = '';
+    } else {
+      const inventoryLine = `Available — Vehicles: ${Object.entries(inventory.vehicles).map(([k,v]) => `${k.replace('_',' ')} ${v}`).join(', ')} · Materials: ${Object.entries(inventory.materials).map(([k,v]) => `${k.replace('_',' ')} ${v}`).join(', ')}`;
+
+      dispatchEl.innerHTML = `
+        <div class="dispatch-section">
+          <h2>Resource dispatch — vehicle &amp; materials</h2>
+          ${dispatches.map(d => {
+            const statusClass = d.human_approved === true ? 'approved' : d.human_approved === false ? 'rejected' : '';
+            const isPending = d.human_approved === null;
+            const currentVehicle = d.edited_vehicle !== null && d.edited_vehicle !== undefined ? d.edited_vehicle : d.recommended_vehicle;
+            const currentMaterials = d.edited_materials || d.recommended_materials || {};
+
+            if (isPending) {
+              return `
+                <div class="dispatch-card">
+                  <div class="dispatch-zone-label">${d.zone_id} <span class="pending-tag">⏸ Pending review</span></div>
+                  <div class="dispatch-reasoning">${d.reasoning}</div>
+                  <div class="dispatch-row">
+                    <label>Vehicle:</label>
+                    <select id="vehicle-${d.allocation_id}">
+                      <option value="">— none —</option>
+                      ${VEHICLE_OPTIONS.map(v => `<option value="${v}" ${v === d.recommended_vehicle ? 'selected' : ''}>${v.replace('_', ' ')}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div class="material-checklist">
+                    ${MATERIAL_TYPES.map(m => `
+                      <div class="material-item">
+                        <label>${m.replace('_',' ')}:</label>
+                        <input type="number" min="0" id="mat-${m}-${d.allocation_id}" value="${currentMaterials[m] || 0}" />
+                      </div>
+                    `).join('')}
+                  </div>
+                  <div class="dispatch-buttons">
+                    <button class="btn-photo-approve" onclick="approveDispatch('${d.allocation_id}', true)">✓ Approve dispatch</button>
+                    <button class="btn-photo-reject" onclick="approveDispatch('${d.allocation_id}', false)">✗ Reject</button>
+                  </div>
+                </div>
+              `;
+            } else {
+              return `
+                <div class="dispatch-card ${statusClass}">
+                  <div class="dispatch-zone-label">${d.zone_id} ${d.human_approved ? '<span class="approved-tag">✓ Dispatched</span>' : '<span class="rejected-tag">✗ Rejected</span>'}</div>
+                  <div class="dispatch-final">${currentVehicle ? currentVehicle.replace('_',' ') : 'No vehicle'} — ${Object.entries(currentMaterials).filter(([k,v]) => v > 0).map(([k,v]) => `${v} ${k.replace('_',' ')}`).join(', ') || 'no materials'}</div>
+                </div>
+              `;
+            }
+          }).join('')}
+          <div class="inventory-bar">${inventoryLine}</div>
+        </div>
+      `;
+    }
+
     const timelineEl = document.getElementById('timeline');
     const sorted = [...timeline].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     if (sorted.length === 0) {
@@ -345,6 +468,22 @@ async function approveDamage(reportId, approved) {
     const descInput = document.getElementById(`desc-${reportId}`);
     if (sevInput) url += `&edited_severity_score=${sevInput.value}`;
     if (descInput) url += `&edited_image_description=${encodeURIComponent(descInput.value)}`;
+  }
+  await fetch(url, { method: 'POST' });
+  refresh();
+}
+
+async function approveDispatch(allocationId, approved) {
+  let url = `/resource/approve?allocation_id=${allocationId}&approved=${approved}`;
+  if (approved) {
+    const vehicleSelect = document.getElementById(`vehicle-${allocationId}`);
+    if (vehicleSelect) url += `&edited_vehicle=${vehicleSelect.value}`;
+    const materials = {};
+    ['food', 'medicine', 'life_jackets', 'clean_water'].forEach(m => {
+      const input = document.getElementById(`mat-${m}-${allocationId}`);
+      if (input) materials[m] = parseInt(input.value) || 0;
+    });
+    url += `&edited_materials=${encodeURIComponent(JSON.stringify(materials))}`;
   }
   await fetch(url, { method: 'POST' });
   refresh();
