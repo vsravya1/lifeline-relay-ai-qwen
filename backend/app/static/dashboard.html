@@ -149,10 +149,12 @@
 
 <div class="layout">
 
-  <div class="agents-panel" id="agents-panel"></div>
-  <div class="inventory-sidebar" id="inventory-sidebar" style="display:none">
-    <div class="inv-title">Resource inventory</div>
-    <div id="inventory-content"></div>
+  <div style="display:flex; flex-direction:column; gap:10px;">
+    <div class="agents-panel" id="agents-panel"></div>
+    <div class="inventory-sidebar" id="inventory-sidebar" style="display:none">
+      <div class="inv-title">Resource inventory</div>
+      <div id="inventory-content"></div>
+    </div>
   </div>
 
   <div class="main-col">
@@ -219,11 +221,10 @@ async function refresh() {
     const dispatches = await dispatchRes.json();
     const inventory = await inventoryRes.json();
 
-    // Inventory sidebar — only show once there's something to display
+    // Inventory sidebar — only show once resource allocations have been triggered
     const invSidebar = document.getElementById('inventory-sidebar');
     const invContent = document.getElementById('inventory-content');
-    const hasInventoryData = Object.keys(inventory.vehicles || {}).length > 0;
-    if (!hasInventoryData) {
+    if (dispatches.length === 0) {
       invSidebar.style.display = 'none';
     } else {
       invSidebar.style.display = 'block';
