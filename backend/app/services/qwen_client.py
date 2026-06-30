@@ -212,22 +212,22 @@ class QwenClient:
 
         # --- RecoveryAgent: resource dispatch recommendation ---
         if "what should we dispatch" in prompt_lower or "currently available" in prompt_lower:
-            if "submerged to roofline" in prompt_lower or "structural damage visible: true" in prompt_lower:
+            if "submerged to roofline" in prompt_lower or "structural damage visible: true" in prompt_lower and "submerged" in prompt_lower:
                 return {
                     "recommended_vehicle": "helicopter",
                     "recommended_materials": {"medicine": 2, "clean_water": 2, "life_jackets": 3},
-                    "reasoning": "Near-total submersion and structural damage make boat access risky and slow; a helicopter is warranted for the most severe zone, with medical and water supplies prioritized."
+                    "reasoning": "Near-total submersion and structural damage make boat access risky — helicopter is warranted for the most severe zone, with medical and water supplies prioritized over food given the acute danger."
                 }
-            if "knee-deep" in prompt_lower or "debris" in prompt_lower:
+            if "knee-deep" in prompt_lower or ("debris" in prompt_lower and "structural damage visible: false" in prompt_lower):
                 return {
                     "recommended_vehicle": "boat",
                     "recommended_materials": {"food": 2, "clean_water": 2, "life_jackets": 2},
-                    "reasoning": "Moderate flooding with debris is navigable by boat; food and water are prioritized given the SOS history in this zone."
+                    "reasoning": "Moderate flooding with debris is navigable by boat; food and water prioritized given the SOS history in this zone."
                 }
             return {
                 "recommended_vehicle": "ground_vehicle",
                 "recommended_materials": {"food": 1, "clean_water": 1},
-                "reasoning": "Shallow water and no structural damage mean road access is likely still viable; minimal supplies needed given the low severity."
+                "reasoning": "Shallow water with road access still viable; minimal supplies needed given the lower severity and no prior SOS activity."
             }
 
         # --- RecoveryAgent: damage assessment ---
