@@ -14,7 +14,7 @@ demos glued together.
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Optional, Dict, List
 from pydantic import BaseModel, Field
 
 
@@ -176,6 +176,37 @@ class DamageReport(BaseModel):
     human_approved: Optional[bool] = None       # None = pending review
     edited_severity_score: Optional[float] = None    # set if a human overrides Qwen's score
     edited_image_description: Optional[str] = None   # set if a human overrides Qwen's description
+    reviewed_at: Optional[datetime] = None
+
+
+# ---------------------------------------------------------------------------
+# Resource dispatch — vehicle + materials recommendation per zone
+# ---------------------------------------------------------------------------
+
+class ResourceAllocation(BaseModel):
+    """
+    A per-zone resource dispatch recommendation, produced by RecoveryAgent
+    reasoning over its own damage findings (water level, structural
+    damage, hazards) plus the zone's SOS history, constrained by what's
+    actually left in the shared resource inventory.
+
+    Like every other AI judgment in this system, this starts as a
+    PROPOSAL — a human can change the vehicle type or materials list
+    before approving, and only approved allocations actually deduct
+    from inventory.
+    """
+    allocation_id: str
+    zone_id: str
+    report_id: str                          # the DamageReport this allocation is based on
+    recommended_vehicle: Optional[str] = None   # "helicopter" | "boat" | "ground_vehicle" | None
+    recommended_materials: Dict[str, int] = Field(default_factory=dict)  # e.g. {"food": 2, "medicine": 1}
+    reasoning: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # Human-in-the-loop fields — mirrors the pattern used everywhere else
+    human_approved: Optional[bool] = None
+    edited_vehicle: Optional[str] = None
+    edited_materials: Optional[Dict[str, int]] = None
     reviewed_at: Optional[datetime] = None
 
 
