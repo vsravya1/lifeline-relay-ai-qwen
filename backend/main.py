@@ -11,7 +11,7 @@ from app.models.schemas import WeatherSignal, SOSMessage
 from app.agents.watcher_agent import assess_zone_risk
 from app.agents.responder_agent import triage_sos
 from app.agents.coordinator_agent import check_for_conflict, approve_conflict
-from app.agents.recovery_agent import assess_damage, assess_damage_from_image, approve_damage_report, calculate_relief_allocation
+from app.agents.recovery_agent import assess_damage, assess_damage_from_image, approve_damage_report, calculate_relief_allocation, recommend_resources, approve_resource_allocation
 from app.memory.store import disaster_memory
 
 app = FastAPI(title="Lifeline Relay API")
@@ -145,11 +145,49 @@ async def recovery_approve(report_id: str, approved: bool, edited_severity_score
     Human-in-the-loop endpoint for Phase 3. Approve Qwen-VL's damage
     finding as-is, or supply edited_severity_score / edited_image_description
     to correct it first. Rejecting excludes the report from relief priority.
+
+    Once approved, automatically triggers a resource dispatch
+    recommendation (vehicle + materials) for that zone — this only
+    happens on approval, never on a pending or rejected report, since
+    recommending real-world resources off an unverified AI judgment
+    would break the human-in-the-loop pattern.
     """
     report = await approve_damage_report(report_id, approved, edited_severity_score, edited_image_description)
     if not report:
         return {"error": "Damage report not found"}
+
+    if approved:
+        await recommend_resources(report)
+
     return report
+
+
+@app.post("/resource/approve")
+async def resource_approve(allocation_id: str, approved: bool, edited_vehicle: str = None, edited_materials: str = None):
+    """
+    Human-in-the-loop endpoint for resource dispatch. Approve as-is, or
+    pass edited_vehicle and/or edited_materials (as a JSON string, e.g.
+    '{"food": 2, "medicine": 1}') to correct the recommendation first.
+    Only approval actually deducts from the shared inventory.
+    """
+    import json
+    parsed_materials = json.loads(edited_materials) if edited_materials else None
+    allocation = await approve_resource_allocation(allocation_id, approved, edited_vehicle, parsed_materials)
+    if not allocation:
+        return {"error": "Resource allocation not found"}
+    return allocation
+
+
+@app.get("/resource-allocations")
+def get_resource_allocations():
+    """Latest resource dispatch recommendation per zone, powers the resource dispatch panel on the dashboard."""
+    return disaster_memory.get_resource_allocations()
+
+
+@app.get("/inventory")
+def get_inventory():
+    """Current vehicle and material inventory levels."""
+    return disaster_memory.get_inventory()
 
 
 @app.get("/conflicts")
