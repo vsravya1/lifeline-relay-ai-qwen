@@ -15,9 +15,149 @@ remembers the disaster's full timeline, not just a snapshot.
 """
 
 import uuid
-from app.models.schemas import DamageReport, RiskLevel, TimelineEntry, AgentName
+from app.models.schemas import DamageReport, RiskLevel, TimelineEntry, AgentName, ResourceAllocation
 from app.services.qwen_client import qwen_client
 from app.memory.store import disaster_memory
+
+
+RESOURCE_SYSTEM_PROMPT = """You are RecoveryAgent, part of a disaster response system called Lifeline Relay.
+You've already assessed damage in a zone. Now recommend which specific resources to dispatch,
+based on the damage findings and what's actually available in inventory right now.
+Pick the SINGLE most appropriate vehicle from what's available (do not recommend a vehicle
+type with 0 remaining). Recommend reasonable material quantities given the situation, but
+do not exceed what's available.
+Respond ONLY with JSON in this exact shape, no other text:
+{"recommended_vehicle": "<helicopter|boat|ground_vehicle|null>", "recommended_materials": {"food": <int>, "medicine": <int>, "life_jackets": <int>, "clean_water": <int>}, "reasoning": "<one or two sentence explanation tying the recommendation to the specific damage findings and inventory constraints>"}
+"""
+
+
+async def recommend_resources(report: DamageReport) -> ResourceAllocation:
+    """
+    Reasons over a damage report's structured findings (water level,
+    structural damage, hazards, people visible) plus current inventory
+    levels to recommend a specific vehicle and material allocation.
+
+    This only runs on APPROVED damage reports — recommending resources
+    for a damage assessment a human hasn't yet signed off on would mean
+    acting on an unverified AI judgment, which breaks the human-in-the-
+    loop pattern used everywhere else in this system.
+    """
+    inventory = disaster_memory.get_inventory()
+
+    findings_summary = (
+        f"Water level: {report.water_level or 'unknown'}. "
+        f"Structural damage visible: {report.structural_damage_visible}. "
+        f"Visible hazards: {', '.join(report.visible_hazards) if report.visible_hazards else 'none'}. "
+        f"People visible in photo: {report.people_visible_count if report.people_visible_count is not None else 'unknown'}. "
+        f"Final priority score: {report.final_priority_score:.1f}/10."
+    )
+    inventory_summary = (
+        f"Vehicles currently available: {inventory['vehicles']}. "
+        f"Materials currently available: {inventory['materials']}."
+    )
+    user_prompt = (
+        f"Zone {report.zone_id} damage findings — {findings_summary}\n"
+        f"Current inventory — {inventory_summary}\n"
+        f"What should we dispatch to this zone?"
+    )
+
+    disaster_memory.set_agent_status("RecoveryAgent", "processing")
+
+    result = await qwen_client.ask(RESOURCE_SYSTEM_PROMPT, user_prompt)
+
+    recommended_vehicle = result.get("recommended_vehicle")
+    if recommended_vehicle == "null" or recommended_vehicle == "":
+        recommended_vehicle = None
+    # Safety check: never recommend a vehicle type that's actually at 0,
+    # even if Qwen's reasoning slips — the inventory constraint should
+    # be enforced in code, not just trusted to the model's compliance.
+    if recommended_vehicle and inventory["vehicles"].get(recommended_vehicle, 0) <= 0:
+        recommended_vehicle = None
+
+    recommended_materials = result.get("recommended_materials", {}) or {}
+    # Clamp each material to what's actually available, same reasoning as above
+    recommended_materials = {
+        k: min(v, inventory["materials"].get(k, 0))
+        for k, v in recommended_materials.items()
+        if v > 0
+    }
+
+    reasoning = result.get("reasoning", "No reasoning provided.")
+
+    allocation = ResourceAllocation(
+        allocation_id=str(uuid.uuid4()),
+        zone_id=report.zone_id,
+        report_id=report.report_id,
+        recommended_vehicle=recommended_vehicle,
+        recommended_materials=recommended_materials,
+        reasoning=reasoning,
+        human_approved=None,
+    )
+
+    disaster_memory.log(TimelineEntry(
+        entry_id=str(uuid.uuid4()),
+        agent=AgentName.RECOVERY,
+        zone_id=report.zone_id,
+        headline=f"Proposed dispatch for {report.zone_id}: {recommended_vehicle or 'no vehicle available'} + {recommended_materials} (pending human review)",
+        detail=reasoning,
+    ))
+
+    disaster_memory.add_resource_allocation(allocation)
+    disaster_memory.set_agent_status("RecoveryAgent", "idle")
+
+    return allocation
+
+
+async def approve_resource_allocation(
+    allocation_id: str,
+    approved: bool,
+    edited_vehicle: str | None = None,
+    edited_materials: dict | None = None,
+) -> ResourceAllocation | None:
+    """
+    Human-in-the-loop step. Only on approval does inventory actually
+    get deducted — this is the real-consequence pattern used throughout
+    the system: nothing changes shared state until a human signs off.
+    """
+    allocation = next((a for a in disaster_memory.resource_allocations if a.allocation_id == allocation_id), None)
+    if not allocation:
+        return None
+
+    allocation.human_approved = approved
+    from datetime import datetime
+    allocation.reviewed_at = datetime.utcnow()
+
+    if approved:
+        final_vehicle = edited_vehicle if edited_vehicle is not None else allocation.recommended_vehicle
+        final_materials = edited_materials if edited_materials is not None else allocation.recommended_materials
+
+        if edited_vehicle is not None:
+            allocation.edited_vehicle = edited_vehicle
+        if edited_materials is not None:
+            allocation.edited_materials = edited_materials
+
+        vehicle_ok = True
+        if final_vehicle:
+            vehicle_ok = disaster_memory.deduct_vehicle(final_vehicle)
+
+        materials_ok = disaster_memory.deduct_materials(final_materials) if final_materials else True
+
+        if not vehicle_ok or not materials_ok:
+            headline = f"✗ Could not fulfill dispatch for {allocation.zone_id} — insufficient inventory at approval time"
+        else:
+            headline = f"✓ Human approved dispatch for {allocation.zone_id}: {final_vehicle or 'no vehicle'} + {final_materials}"
+    else:
+        headline = f"✗ Human rejected dispatch recommendation for {allocation.zone_id} — no resources allocated"
+
+    disaster_memory.log(TimelineEntry(
+        entry_id=str(uuid.uuid4()),
+        agent=AgentName.RECOVERY,
+        zone_id=allocation.zone_id,
+        headline=headline,
+        detail=f"Human review on resource allocation {allocation_id[:8]}.",
+    ))
+
+    return allocation
 
 SYSTEM_PROMPT = """You are RecoveryAgent, part of a disaster response system called Lifeline Relay.
 Your job is to assess disaster damage from a photo description (you are simulating
