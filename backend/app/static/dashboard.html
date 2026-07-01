@@ -164,7 +164,7 @@
     </div>
 
     <div class="demo-controls">
-      <h2>Demo sequence</h2>
+      <h2>Demo sequence <button onclick="resetDemo()" style="float:right;font-size:11px;padding:4px 10px;border-radius:5px;border:1px solid #ccc;background:#fff;cursor:pointer;color:#c62828;">↺ Reset</button></h2>
       <div class="demo-row">
         <span class="group-label">Phase 1 — Weather</span>
         <button class="demo-btn" onclick="runStep('/demo/phase1/step1', this)">9:00 AM — Initial signals</button>
@@ -473,6 +473,12 @@ async function runStep(endpoint, btnEl) {
   } finally {
     btnEl.disabled = false;
   }
+}
+
+async function resetDemo() {
+  if (!confirm('Reset all data and start fresh?')) return;
+  await fetch('/reset', { method: 'POST' });
+  await refresh();
 }
 
 refresh();
