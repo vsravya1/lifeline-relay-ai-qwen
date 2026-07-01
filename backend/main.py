@@ -196,6 +196,16 @@ def get_conflicts():
     return list(disaster_memory.conflicts.values())
 
 
+@app.post("/reset")
+def reset():
+    """Wipes all in-memory state back to empty — same effect as restarting
+    uvicorn, but without killing the process. Use this before each demo run."""
+    from app.memory.store import DisasterMemory
+    import app.memory.store as store_module
+    store_module.disaster_memory.__init__()
+    return {"status": "reset", "message": "All memory cleared — ready for a fresh demo run"}
+
+
 @app.get("/agent-status")
 def get_agent_status():
     """Current status of each agent (idle / processing / conflict_found) — powers the agent panel on the dashboard."""
